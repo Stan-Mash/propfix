@@ -8,7 +8,8 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { MaterialIcons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow, card, accent } from '../../theme';
-import { PROPERTIES, UNITS, UNIT_COST_PER_M3, getMasterMeterVariance } from '../../data/seed';
+import { UNIT_COST_PER_M3 } from '../../data/seed';
+import { usePortfolio } from '../../context/PortfolioContext';
 import { useAppSettings } from '../../context/AppSettingsContext';
 import { useAuth } from '../../context/AuthContext';
 import { logAudit } from '../../utils/auditLog';
@@ -78,6 +79,7 @@ export default function BillGeneratorScreen({ navigation }) {
   // Caretakers get a meter walk-sheet: tenant and billing fields are locked, only this month's reading is entered
   const isCaretaker = userProfile?.role === 'caretaker';
   const [submitted, setSubmitted] = useState(false);
+  const [activeTab, setActiveTab] = useState('billing');
   const now = new Date();
   const [company, setCompany] = useState(settings.companyName.toUpperCase());
   const [billType, setBillType] = useState('WATER BILL');
@@ -89,8 +91,11 @@ export default function BillGeneratorScreen({ navigation }) {
   const [year, setYear] = useState(String(now.getFullYear()));
   const [unitCost, setUnitCost] = useState(String(settings.unitCostDefault));
   const [note, setNote] = useState('');
-  const [rows, setRows] = useState(() => [newRow('A1'), newRow('A2'), newRow('A3')]);
+  const [rows, setRows] = useState([]);
   const [rowPhotos, setRowPhotos] = useState({});
+  const [expandedRows, setExpandedRows] = useState({});
+
+  const isMeterBill = billType === 'WATER BILL' || billType === 'ELECTRICITY BILL';
 
   const [showPropModal, setShowPropModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
@@ -101,8 +106,9 @@ export default function BillGeneratorScreen({ navigation }) {
   const [showMonthModal, setShowMonthModal] = useState(false);
   const [slipRow, setSlipRow] = useState(null);
 
-  const selectedProp = PROPERTIES.find(p => p.id === selectedPropertyId);
-  const leak = selectedPropertyId ? getMasterMeterVariance(selectedPropertyId) : null;
+  const { properties, units: allUnits, getVariance } = usePortfolio();
+  const selectedProp = properties.find(p => p.id === selectedPropertyId);
+  const leak = selectedPropertyId ? getVariance(selectedPropertyId) : null;
   const masterConsumption = selectedProp ? (selectedProp.masterMeterReading - selectedProp.lastMasterMeter) : 0;
 
   // Spike detection: flag rows where consumption > 2.5x average across all rows
@@ -116,9 +122,9 @@ export default function BillGeneratorScreen({ navigation }) {
   };
 
   const loadPropertyRows = (propId, blankPresent = false) => {
-    const units = UNITS[propId] || [];
+    const units = allUnits[propId] || [];
     if (units.length === 0) return;
-    const prop = PROPERTIES.find(p => p.id === propId);
+    const prop = properties.find(p => p.id === propId);
     if (prop) setHouse(prop.name);
     setRows(units.map(u => ({
       id: String(rowCounter++),
@@ -134,8 +140,10 @@ export default function BillGeneratorScreen({ navigation }) {
   };
 
   useEffect(() => {
-    const firstId = (isCaretaker && userProfile?.assignedProperties?.[0]) || PROPERTIES[0]?.id;
-    if (firstId) { setSelectedPropertyId(firstId); loadPropertyRows(firstId, isCaretaker); }
+    if (isCaretaker) {
+      const firstId = userProfile?.assignedProperties?.[0] || properties[0]?.id;
+      if (firstId) { setSelectedPropertyId(firstId); loadPropertyRows(firstId, true); }
+    }
   }, []);
 
   const enteredCount = rows.filter(r => String(r.pres).trim() !== '').length;
@@ -154,9 +162,15 @@ export default function BillGeneratorScreen({ navigation }) {
     setSubmitted(true);
   };
 
+  const toggleExpand = (id) => setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
+
   const updateRow = (id, field, value) =>
     setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
-  const addRow = () => setRows(prev => [...prev, newRow('')]);
+  const addRow = () => {
+    const r = newRow('');
+    setRows(prev => [...prev, r]);
+    setExpandedRows(prev => ({ ...prev, [r.id]: true }));
+  };
   const removeRow = (id) => {
     if (rows.length <= 1) { Alert.alert('Cannot remove', 'You need at least one flat row.'); return; }
     setRows(prev => prev.filter(r => r.id !== id));
@@ -237,7 +251,9 @@ export default function BillGeneratorScreen({ navigation }) {
     const grand = rows.reduce((sum, r) => sum + calcRow(r, unitCost).total, 0);
     const totalArrears = rows.reduce((sum, r) => sum + (parseFloat(r.arrears) || 0), 0);
     const totalUnits = rows.reduce((sum, r) => sum + calcRow(r, unitCost).cons, 0);
-    const dueMonth = MONTHS[(MONTHS.indexOf(month) + 1) % 12];
+    const monthIdx = MONTHS.indexOf(month);
+    const dueMonth = MONTHS[(monthIdx + 1) % 12];
+    const dueYear = monthIdx === 11 ? String(parseInt(year, 10) + 1) : year;
     const paybill = settings.paybill || settings.mpesaPaybill || '';
 
     const slipHTML = (r, isEmpty) => {
@@ -260,7 +276,7 @@ export default function BillGeneratorScreen({ navigation }) {
         </div>
         <div class="ref-strip">
           <span>Ref: <b>${ref}</b></span>
-          <span>Due: <b>15 ${dueMonth} ${year}</b></span>
+          <span>Due: <b>15 ${dueMonth} ${dueYear}</b></span>
         </div>
         <div class="info-grid">
           <div class="ic"><div class="ic-l">TENANT</div><div class="ic-v">${r.tenantName || '—'}</div></div>
@@ -339,7 +355,7 @@ export default function BillGeneratorScreen({ navigation }) {
       </div>
       <div class="sum-meta">
         <div class="sm-cell"><div class="sm-lbl">BILL PERIOD</div><div class="sm-val">${month} ${year}</div></div>
-        <div class="sm-cell"><div class="sm-lbl">DUE DATE</div><div class="sm-val">15 ${dueMonth} ${year}</div></div>
+        <div class="sm-cell"><div class="sm-lbl">DUE DATE</div><div class="sm-val">15 ${dueMonth} ${dueYear}</div></div>
         <div class="sm-cell"><div class="sm-lbl">MASTER METER</div><div class="sm-val">${totalUnits} units used</div></div>
       </div>
       <div class="sum-stats">
@@ -399,87 +415,87 @@ export default function BillGeneratorScreen({ navigation }) {
 
     const css = `
       *{box-sizing:border-box;margin:0;padding:0}
-      body{font-family:Arial,Helvetica,sans-serif;background:#060E1C;color:#E2E8F0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      .page{width:210mm;min-height:297mm;padding:8mm;page-break-after:always;background:#060E1C}
+      body{font-family:Arial,Helvetica,sans-serif;background:#FFFFFF;color:#0B1320;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .page{width:210mm;min-height:297mm;padding:8mm;page-break-after:always;background:#FFFFFF}
       .grid4{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:5mm;height:281mm}
-      .slip{border:1px solid #1E3A5F;border-radius:6px;display:flex;flex-direction:column;overflow:hidden;background:#0D1B2A}
-      .slip-empty{border:1px dashed #1E3A5F;background:#0A1220}
-      .slip-head{background:#0F2D57;padding:9px 10px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+      .slip{border:1px solid #E4E7EC;border-radius:6px;display:flex;flex-direction:column;overflow:hidden;background:#FFFFFF}
+      .slip-empty{border:1px dashed #E4E7EC;background:#F6F7F9}
+      .slip-head{background:#0B1320;padding:9px 10px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
       .sh-co{color:#fff;font-size:9.5px;font-weight:700;letter-spacing:0.3px}
       .sh-type{color:#93C5FD;font-size:7.5px;margin-top:2px;text-transform:uppercase;letter-spacing:0.4px}
       .sh-due{text-align:right;flex-shrink:0}
       .sh-due-lbl{color:#93C5FD;font-size:7px;text-transform:uppercase;letter-spacing:0.4px}
       .sh-due-amt{color:#fff;font-size:11px;font-weight:800;margin-top:1px}
-      .ref-strip{padding:5px 10px;font-size:7.5px;color:#64748B;display:flex;justify-content:space-between;border-bottom:1px solid #1E3A5F;background:#0A1220}
-      .info-grid{display:grid;grid-template-columns:1fr 1fr;padding:6px 10px 4px;gap:0;border-bottom:1px solid #1E3A5F}
+      .ref-strip{padding:5px 10px;font-size:7.5px;color:#64748B;display:flex;justify-content:space-between;border-bottom:1px solid #E4E7EC;background:#F6F7F9}
+      .info-grid{display:grid;grid-template-columns:1fr 1fr;padding:6px 10px 4px;gap:0;border-bottom:1px solid #E4E7EC}
       .ic{padding:3px 0}
       .ic-l{font-size:6.5px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;display:block}
-      .ic-v{font-size:8.5px;font-weight:700;color:#E2E8F0;display:block}
+      .ic-v{font-size:8.5px;font-weight:700;color:#0B1320;display:block}
       .rtbl{width:100%;border-collapse:collapse;font-size:7.5px}
-      .rtbl thead{background:#0A1220}
-      .rtbl th{padding:4px 8px;text-align:center;font-size:6.5px;color:#64748B;text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid #1E3A5F}
-      .rtbl td{padding:5px 8px;text-align:center;border-bottom:1px solid #1E3A5F;color:#CBD5E1}
-      .charges{padding:5px 10px;border-bottom:1px solid #1E3A5F;flex:1}
-      .ch{display:flex;justify-content:space-between;font-size:7.5px;padding:3px 0;color:#94A3B8}
-      .ch-arr{color:#F87171;font-weight:600}
-      .total-bar{background:#0F2D57;padding:7px 10px;display:flex;justify-content:space-between;align-items:center}
+      .rtbl thead{background:#F6F7F9}
+      .rtbl th{padding:4px 8px;text-align:center;font-size:6.5px;color:#64748B;text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid #E4E7EC}
+      .rtbl td{padding:5px 8px;text-align:center;border-bottom:1px solid #E4E7EC;color:#374151}
+      .charges{padding:5px 10px;border-bottom:1px solid #E4E7EC;flex:1}
+      .ch{display:flex;justify-content:space-between;font-size:7.5px;padding:3px 0;color:#374151}
+      .ch-arr{color:#B91C1C;font-weight:600}
+      .total-bar{background:#0B1320;padding:7px 10px;display:flex;justify-content:space-between;align-items:center}
       .total-bar span:first-child{color:#93C5FD;font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px}
       .total-bar span:last-child{color:#fff;font-size:12px;font-weight:900}
-      .mpesa-row{display:flex;border-top:1px solid #1E3A5F;background:#051020}
-      .ms{flex:1;padding:4px 0;text-align:center;border-right:1px solid #1E3A5F}
+      .mpesa-row{display:flex;border-top:1px solid #E4E7EC;background:#F6F7F9}
+      .ms{flex:1;padding:4px 0;text-align:center;border-right:1px solid #E4E7EC}
       .ms:last-child{border-right:none}
       .ms-l{font-size:6px;color:#64748B;text-transform:uppercase;letter-spacing:0.4px}
-      .ms-v{font-size:8.5px;font-weight:800;color:#93C5FD;margin-top:1px}
-      .note-row{padding:4px 10px;font-size:7px;color:#64748B;border-top:1px solid #1E3A5F}
-      .slip-foot{font-size:6.5px;color:#475569;text-align:center;padding:4px;border-top:1px solid #1E3A5F;background:#060E1C}
-      .sum-page{padding:10mm;background:#060E1C}
-      .sum-header{background:#0D1B2A;border:1px solid #1E3A5F;padding:16px 20px;border-radius:8px;display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
+      .ms-v{font-size:8.5px;font-weight:800;color:#1D4ED8;margin-top:1px}
+      .note-row{padding:4px 10px;font-size:7px;color:#64748B;border-top:1px solid #E4E7EC}
+      .slip-foot{font-size:6.5px;color:#94A3B8;text-align:center;padding:4px;border-top:1px solid #E4E7EC;background:#F6F7F9}
+      .sum-page{padding:10mm;background:#FFFFFF}
+      .sum-header{background:#0B1320;border:1px solid #0B1320;padding:16px 20px;border-radius:8px;display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
       .sum-prop{color:#fff;font-size:16px;font-weight:800;letter-spacing:-0.3px}
-      .sum-sub{color:#60A5FA;font-size:9px;margin-top:4px;text-transform:uppercase;letter-spacing:0.6px}
-      .sum-total-badge{border:1.5px solid #2563EB;border-radius:8px;padding:8px 14px;text-align:right;flex-shrink:0}
+      .sum-sub{color:#93C5FD;font-size:9px;margin-top:4px;text-transform:uppercase;letter-spacing:0.6px}
+      .sum-total-badge{border:1.5px solid rgba(255,255,255,0.3);border-radius:8px;padding:8px 14px;text-align:right;flex-shrink:0}
       .stb-lbl{color:#93C5FD;font-size:8px;text-transform:uppercase;letter-spacing:0.5px}
       .stb-amt{color:#fff;font-size:18px;font-weight:900;margin-top:3px}
-      .sum-meta{display:grid;grid-template-columns:1fr 1fr 1fr;background:#0D1B2A;border:1px solid #1E3A5F;border-radius:8px;margin-bottom:10px;overflow:hidden}
-      .sm-cell{padding:12px 16px;border-right:1px solid #1E3A5F}
+      .sum-meta{display:grid;grid-template-columns:1fr 1fr 1fr;background:#FFFFFF;border:1px solid #E4E7EC;border-radius:8px;margin-bottom:10px;overflow:hidden}
+      .sm-cell{padding:12px 16px;border-right:1px solid #E4E7EC}
       .sm-cell:last-child{border-right:none}
-      .sm-lbl{color:#60A5FA;font-size:8px;text-transform:uppercase;letter-spacing:0.6px}
-      .sm-val{color:#F1F5F9;font-size:11px;font-weight:700;margin-top:4px}
+      .sm-lbl{color:#1D4ED8;font-size:8px;text-transform:uppercase;letter-spacing:0.6px}
+      .sm-val{color:#0B1320;font-size:11px;font-weight:700;margin-top:4px}
       .sum-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
-      .stat{background:#0D1B2A;border:1px solid #1E3A5F;border-radius:6px;padding:10px 12px;text-align:center}
-      .stat.warn{background:#1C1000;border-color:#92400E}
-      .stat-n{font-size:16px;font-weight:800;color:#60A5FA}
-      .stat-n.warn{color:#FCD34D}
+      .stat{background:#FFFFFF;border:1px solid #E4E7EC;border-radius:6px;padding:10px 12px;text-align:center}
+      .stat.warn{background:#FFFBEB;border-color:#D97706}
+      .stat-n{font-size:16px;font-weight:800;color:#1D4ED8}
+      .stat-n.warn{color:#B45309}
       .stat-l{font-size:7px;text-transform:uppercase;letter-spacing:0.5px;color:#64748B;margin-top:3px}
-      .leak-alert{background:#1C1000;border:1px solid #92400E;border-radius:6px;padding:10px 14px;font-size:9px;color:#FCD34D;margin-bottom:10px;line-height:1.5}
-      .sum-tbl-hdr{color:#60A5FA;font-size:8px;text-transform:uppercase;letter-spacing:0.8px;padding:10px 0 6px}
+      .leak-alert{background:#FFFBEB;border:1px solid #D97706;border-radius:6px;padding:10px 14px;font-size:9px;color:#92400E;margin-bottom:10px;line-height:1.5}
+      .sum-tbl-hdr{color:#1D4ED8;font-size:8px;text-transform:uppercase;letter-spacing:0.8px;padding:10px 0 6px}
       .sum-tbl{width:100%;border-collapse:collapse;font-size:9px}
-      .sum-tbl thead{background:#0D1B2A}
-      .sum-tbl th{padding:8px 10px;text-align:left;color:#60A5FA;font-size:7.5px;text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid #1E3A5F}
+      .sum-tbl thead{background:#F6F7F9}
+      .sum-tbl th{padding:8px 10px;text-align:left;color:#1D4ED8;font-size:7.5px;text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid #E4E7EC}
       .sum-tbl th.num{text-align:right}
-      .sum-tbl td{padding:8px 10px;border-bottom:1px solid #1E3A5F;color:#CBD5E1}
+      .sum-tbl td{padding:8px 10px;border-bottom:1px solid #E4E7EC;color:#374151}
       .sum-tbl td.num{text-align:right}
-      .sum-tbl td.bold{font-weight:700;color:#F1F5F9}
-      .sum-tbl td.col-flat{font-weight:800;color:#60A5FA}
-      .sum-tbl td.arr{color:#F87171;font-weight:700}
-      .sum-tbl tr:nth-child(even) td{background:#0A1220}
-      .sum-tbl tr.totals-row td{background:#0F2D57;color:#93C5FD;font-weight:700;border-bottom:none}
+      .sum-tbl td.bold{font-weight:700;color:#0B1320}
+      .sum-tbl td.col-flat{font-weight:800;color:#1D4ED8}
+      .sum-tbl td.arr{color:#B91C1C;font-weight:700}
+      .sum-tbl tr:nth-child(even) td{background:#F6F7F9}
+      .sum-tbl tr.totals-row td{background:#0B1320;color:#93C5FD;font-weight:700;border-bottom:none}
       .badge{font-size:7px;font-weight:800;padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:0.4px}
-      .badge.pend{background:#1C2D10;color:#86EFAC;border:1px solid #166534}
-      .badge.over{background:#2D0A0A;color:#FCA5A5;border:1px solid #991B1B}
+      .badge.pend{background:#DCFCE7;color:#15803D;border:1px solid #86EFAC}
+      .badge.over{background:#FEE2E2;color:#991B1B;border:1px solid #FECACA}
       .pay-summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
-      .ps-cell{background:#0D1B2A;border:1px solid #1E3A5F;border-radius:6px;padding:12px 14px}
+      .ps-cell{background:#FFFFFF;border:1px solid #E4E7EC;border-radius:6px;padding:12px 14px}
       .ps-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px}
-      .ps-pend .ps-lbl{color:#FCD34D}
-      .ps-over .ps-lbl{color:#F87171}
-      .ps-info .ps-lbl{color:#60A5FA}
+      .ps-pend .ps-lbl{color:#B45309}
+      .ps-over .ps-lbl{color:#B91C1C}
+      .ps-info .ps-lbl{color:#1D4ED8}
       .ps-count{font-size:8.5px;color:#64748B;margin-top:3px}
-      .ps-amt{font-size:14px;font-weight:900;color:#F1F5F9;margin-top:4px}
-      .sum-foot{display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px;padding-top:10px;border-top:1px solid #1E3A5F}
-      .sf-left{font-size:8.5px;color:#475569;line-height:1.6}
+      .ps-amt{font-size:14px;font-weight:900;color:#0B1320;margin-top:4px}
+      .sum-foot{display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px;padding-top:10px;border-top:1px solid #E4E7EC}
+      .sf-left{font-size:8.5px;color:#64748B;line-height:1.6}
       .sf-right{text-align:right}
-      .sf-rlbl{color:#334155;font-size:7px;text-transform:uppercase;letter-spacing:0.5px}
-      .sf-rval{color:#94A3B8;font-size:9px;font-weight:700}
-      .sf-rapp{color:#60A5FA;font-size:9px;font-weight:800;margin-top:4px}
+      .sf-rlbl{color:#94A3B8;font-size:7px;text-transform:uppercase;letter-spacing:0.5px}
+      .sf-rval{color:#374151;font-size:9px;font-weight:700}
+      .sf-rapp{color:#1D4ED8;font-size:9px;font-weight:800;margin-top:4px}
       @media print{.page{page-break-after:always}}
     `;
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${css}</style></head><body>${pages.join('')}</body></html>`;
@@ -502,64 +518,66 @@ export default function BillGeneratorScreen({ navigation }) {
     const arr = parseFloat(row.arrears) || 0;
     const uc = parseFloat(unitCost) || 0;
     const waterCharge = cons * uc;
-    const dueMonth = MONTHS[(MONTHS.indexOf(month) + 1) % 12];
+    const monthIdx2 = MONTHS.indexOf(month);
+    const dueMonth = MONTHS[(monthIdx2 + 1) % 12];
+    const dueYear = monthIdx2 === 11 ? String(parseInt(year, 10) + 1) : year;
     const ref = `${(house || 'PROP').replace(/\s+/g, '').substring(0, 3).toUpperCase()}-${(row.flat || '').replace(/\s+/g, '')}-${month.substring(0, 3).toUpperCase()}${year.slice(-2)}`;
     const paybill = settings.paybill || settings.mpesaPaybill || '';
     const genDate = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
     const genTime = new Date().toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
       *{box-sizing:border-box;margin:0;padding:0}
-      body{font-family:Arial,Helvetica,sans-serif;background:#060E1C;color:#E2E8F0;-webkit-print-color-adjust:exact;print-color-adjust:exact;padding:8mm}
-      .bill{max-width:170mm;margin:0 auto;background:#0D1B2A;border:1px solid #1E3A5F;border-radius:10px;overflow:hidden}
-      .hdr{background:#0D1B2A;padding:18px 20px 14px;border-bottom:1px solid #1E3A5F;display:flex;justify-content:space-between;align-items:flex-start}
+      body{font-family:Arial,Helvetica,sans-serif;background:#FFFFFF;color:#0B1320;-webkit-print-color-adjust:exact;print-color-adjust:exact;padding:8mm}
+      .bill{max-width:170mm;margin:0 auto;background:#FFFFFF;border:1px solid #E4E7EC;border-radius:10px;overflow:hidden}
+      .hdr{background:#0B1320;padding:18px 20px 14px;border-bottom:1px solid #0B1320;display:flex;justify-content:space-between;align-items:flex-start}
       .hdr-left .prop-name{color:#fff;font-size:17px;font-weight:800;letter-spacing:-0.3px}
-      .hdr-left .mgd-by{color:#60A5FA;font-size:9px;text-transform:uppercase;letter-spacing:0.8px;margin-top:4px}
-      .due-badge{border:1.5px solid #2563EB;border-radius:8px;padding:8px 14px;text-align:right}
+      .hdr-left .mgd-by{color:#93C5FD;font-size:9px;text-transform:uppercase;letter-spacing:0.8px;margin-top:4px}
+      .due-badge{border:1.5px solid rgba(255,255,255,0.3);border-radius:8px;padding:8px 14px;text-align:right}
       .due-badge .due-lbl{color:#93C5FD;font-size:8px;text-transform:uppercase;letter-spacing:0.5px}
       .due-badge .due-amt{color:#fff;font-size:19px;font-weight:900;margin-top:3px}
-      .meta-row{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #1E3A5F}
-      .meta-cell{padding:12px 20px;border-right:1px solid #1E3A5F}
+      .meta-row{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #E4E7EC}
+      .meta-cell{padding:12px 20px;border-right:1px solid #E4E7EC}
       .meta-cell:last-child{border-right:none}
-      .meta-lbl{color:#60A5FA;font-size:8px;text-transform:uppercase;letter-spacing:0.6px}
-      .meta-val{color:#F1F5F9;font-size:11px;font-weight:700;margin-top:4px}
-      .sec-hdr{color:#60A5FA;font-size:8px;text-transform:uppercase;letter-spacing:0.8px;padding:12px 20px 8px}
+      .meta-lbl{color:#1D4ED8;font-size:8px;text-transform:uppercase;letter-spacing:0.6px}
+      .meta-val{color:#0B1320;font-size:11px;font-weight:700;margin-top:4px}
+      .sec-hdr{color:#1D4ED8;font-size:8px;text-transform:uppercase;letter-spacing:0.8px;padding:12px 20px 8px}
       .tgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 20px 14px}
-      .tcard{background:#0A1628;border:1px solid #1E3A5F;border-radius:6px;padding:10px 14px}
-      .tc-lbl{color:#94A3B8;font-size:8px;text-transform:uppercase;letter-spacing:0.5px}
-      .tc-val{color:#F1F5F9;font-size:12px;font-weight:700;margin-top:4px}
+      .tcard{background:#F6F7F9;border:1px solid #E4E7EC;border-radius:6px;padding:10px 14px}
+      .tc-lbl{color:#64748B;font-size:8px;text-transform:uppercase;letter-spacing:0.5px}
+      .tc-val{color:#0B1320;font-size:12px;font-weight:700;margin-top:4px}
       .rdg-wrap{padding:0 20px 14px}
       .rtbl{width:100%;border-collapse:collapse;border-radius:6px;overflow:hidden}
-      .rtbl thead tr{background:#0A1628}
-      .rtbl th{padding:9px 10px;text-align:center;font-size:8px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #1E3A5F}
-      .rtbl td{padding:12px 10px;text-align:center;border-bottom:1px solid #1E3A5F;color:#CBD5E1;font-size:11px}
-      .rtbl .rdg-lbl{text-align:left;color:#F1F5F9;font-weight:700}
-      .rtbl .rate-main{font-size:11px;color:#F1F5F9;font-weight:700}
+      .rtbl thead tr{background:#F6F7F9}
+      .rtbl th{padding:9px 10px;text-align:center;font-size:8px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #E4E7EC}
+      .rtbl td{padding:12px 10px;text-align:center;border-bottom:1px solid #E4E7EC;color:#374151;font-size:11px}
+      .rtbl .rdg-lbl{text-align:left;color:#0B1320;font-weight:700}
+      .rtbl .rate-main{font-size:11px;color:#0B1320;font-weight:700}
       .rtbl .rate-sub{font-size:8px;color:#64748B;margin-top:2px}
-      .rtbl .cons-val{font-size:12px;font-weight:800;color:#60A5FA}
-      .chg-wrap{padding:0 20px 4px;border-top:1px solid #1E3A5F}
-      .ch-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #1E3A5F;font-size:10px}
+      .rtbl .cons-val{font-size:12px;font-weight:800;color:#1D4ED8}
+      .chg-wrap{padding:0 20px 4px;border-top:1px solid #E4E7EC}
+      .ch-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #E4E7EC;font-size:10px}
       .ch-row:last-child{border-bottom:none}
-      .ch-lbl{color:#94A3B8}
-      .ch-val{color:#E2E8F0;font-weight:600}
-      .ch-val.zero{color:#475569}
-      .ch-val.arr{color:#F87171;font-weight:700}
-      .total-bar{background:#0F2D57;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;border-top:2px solid #2563EB}
+      .ch-lbl{color:#64748B}
+      .ch-val{color:#0B1320;font-weight:600}
+      .ch-val.zero{color:#94A3B8}
+      .ch-val.arr{color:#B91C1C;font-weight:700}
+      .total-bar{background:#0B1320;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;border-top:2px solid #0B1320}
       .total-lbl{color:#93C5FD;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px}
       .total-amt{color:#fff;font-size:24px;font-weight:900}
-      .mpesa-hdr{background:#051020;padding:8px 20px;color:#60A5FA;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:0.8px;border-top:1px solid #1E3A5F}
-      .mpesa-steps{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border-top:1px solid #1E3A5F}
-      .ms{padding:12px 10px;text-align:center;border-right:1px solid #1E3A5F;background:#051020}
+      .mpesa-hdr{background:#F6F7F9;padding:8px 20px;color:#1D4ED8;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:0.8px;border-top:1px solid #E4E7EC}
+      .mpesa-steps{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border-top:1px solid #E4E7EC}
+      .ms{padding:12px 10px;text-align:center;border-right:1px solid #E4E7EC;background:#F6F7F9}
       .ms:last-child{border-right:none}
-      .ms-step{color:#2563EB;font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:0.6px}
+      .ms-step{color:#1D4ED8;font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:0.6px}
       .ms-desc{color:#64748B;font-size:7px;margin-top:2px}
-      .ms-val{color:#F1F5F9;font-size:13px;font-weight:900;margin-top:4px}
-      .note-row{padding:10px 20px;font-size:9px;color:#64748B;border-top:1px solid #1E3A5F;background:#0A1628}
-      .foot{display:flex;justify-content:space-between;align-items:flex-end;padding:12px 20px;border-top:1px solid #1E3A5F;background:#060E1C}
-      .foot-left{font-size:8.5px;color:#475569;line-height:1.6}
-      .foot-right{text-align:right;font-size:8px;color:#475569}
-      .foot-right .gen-label{color:#334155;text-transform:uppercase;letter-spacing:0.5px;font-size:7px}
-      .foot-right .gen-val{color:#94A3B8;font-weight:700;font-size:9px}
-      .foot-right .app-name{color:#60A5FA;font-weight:800;font-size:9px}
+      .ms-val{color:#0B1320;font-size:13px;font-weight:900;margin-top:4px}
+      .note-row{padding:10px 20px;font-size:9px;color:#64748B;border-top:1px solid #E4E7EC;background:#F6F7F9}
+      .foot{display:flex;justify-content:space-between;align-items:flex-end;padding:12px 20px;border-top:1px solid #E4E7EC;background:#F6F7F9}
+      .foot-left{font-size:8.5px;color:#64748B;line-height:1.6}
+      .foot-right{text-align:right;font-size:8px;color:#64748B}
+      .foot-right .gen-label{color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;font-size:7px}
+      .foot-right .gen-val{color:#374151;font-weight:700;font-size:9px}
+      .foot-right .app-name{color:#1D4ED8;font-weight:800;font-size:9px}
     </style></head><body>
       <div class="bill">
         <div class="hdr">
@@ -574,7 +592,7 @@ export default function BillGeneratorScreen({ navigation }) {
         </div>
         <div class="meta-row">
           <div class="meta-cell"><div class="meta-lbl">BILL PERIOD</div><div class="meta-val">${month} ${year}</div></div>
-          <div class="meta-cell"><div class="meta-lbl">DUE DATE</div><div class="meta-val">15 ${dueMonth} ${year}</div></div>
+          <div class="meta-cell"><div class="meta-lbl">DUE DATE</div><div class="meta-val">15 ${dueMonth} ${dueYear}</div></div>
           <div class="meta-cell"><div class="meta-lbl">REFERENCE NO.</div><div class="meta-val">${ref}</div></div>
         </div>
         <div class="sec-hdr">TENANT DETAILS</div>
@@ -612,7 +630,7 @@ export default function BillGeneratorScreen({ navigation }) {
         <div class="mpesa-steps">
           <div class="ms"><div class="ms-step">STEP 1</div><div class="ms-desc">Paybill Number</div><div class="ms-val">${paybill}</div></div>
           <div class="ms"><div class="ms-step">STEP 2</div><div class="ms-desc">Account Number</div><div class="ms-val">${ref.split('-').slice(0,2).join('-')}</div></div>
-          <div class="ms"><div class="ms-step">STEP 3</div><div class="ms-desc">Amount</div><div class="ms-val">${Number(total).toLocaleString()}</div></div>
+          <div class="ms"><div class="ms-step">STEP 3</div><div class="ms-desc">Amount (KES)</div><div class="ms-val">${Number(total).toLocaleString()}</div></div>
         </div>` : ''}
         ${note ? `<div class="note-row">${note}</div>` : ''}
         <div class="foot">
@@ -650,24 +668,29 @@ export default function BillGeneratorScreen({ navigation }) {
         title={isCaretaker ? 'Meter Walk-Sheet' : 'Bill Generator'}
         subtitle={isCaretaker ? `${house || 'My Site'} · ${month} ${year}` : 'Water · Service Charge · Rent'}
         rightAction={isCaretaker ? null : (
-          <View style={{ flexDirection: 'row', gap: 6 }}>
-            <TouchableOpacity style={[styles.shareAllBtn, { backgroundColor: colors.info }]} onPress={exportPDF}>
-              <MaterialIcons name="description" size={13} color="#fff" />
-              <Text style={styles.shareAllText}>PDF</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.shareAllBtn} onPress={exportPDF}>
-              <MaterialIcons name="picture-as-pdf" size={13} color="#fff" />
-              <Text style={styles.shareAllText}>Share PDF</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.headerPdfBtn} onPress={exportPDF}>
+            <MaterialIcons name="picture-as-pdf" size={13} color="#fff" />
+            <Text style={styles.headerPdfText}>Preview PDF</Text>
+          </TouchableOpacity>
         )}
       />
+
+      {!isCaretaker && (
+        <View style={styles.tabBar}>
+          <TouchableOpacity style={[styles.tab, activeTab === 'billing' && styles.tabActive]} onPress={() => setActiveTab('billing')} activeOpacity={0.8}>
+            <Text style={[styles.tabText, activeTab === 'billing' && styles.tabTextActive]}>Billing</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.tab, activeTab === 'payments' && styles.tabActive]} onPress={() => setActiveTab('payments')} activeOpacity={0.8}>
+            <Text style={[styles.tabText, activeTab === 'payments' && styles.tabTextActive]}>History &amp; Payments</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
           {/* Property Selector */}
-          {!isCaretaker && <View style={styles.section}>
+          {!isCaretaker && activeTab === 'billing' && <View style={styles.section}>
             <Text style={styles.sectionLabel}>Property</Text>
             <View style={styles.card}>
               <TouchableOpacity style={styles.picker} onPress={() => setShowPropModal(true)}>
@@ -712,7 +735,7 @@ export default function BillGeneratorScreen({ navigation }) {
           )}
 
           {/* Bill Details */}
-          {!isCaretaker && <View style={styles.section}>
+          {!isCaretaker && activeTab === 'billing' && <View style={styles.section}>
             <Text style={styles.sectionLabel}>Bill Details</Text>
             <View style={styles.card}>
               {/* Company name is fixed, not editable */}
@@ -730,7 +753,7 @@ export default function BillGeneratorScreen({ navigation }) {
           </View>}
 
           {/* Property Info */}
-          {!isCaretaker && <View style={styles.section}>
+          {!isCaretaker && activeTab === 'billing' && <View style={styles.section}>
             <Text style={styles.sectionLabel}>Billing Period</Text>
             <View style={styles.card}>
               {/* Property name shown as read-only label when selected */}
@@ -824,108 +847,145 @@ export default function BillGeneratorScreen({ navigation }) {
                   </View>
                 );
               }
+              const isExpanded = !!expandedRows[row.id];
               return (
                 <View key={row.id} style={styles.rowCard}>
-                  <View style={styles.rowCardHead}>
+                  {/* Accordion header — always visible */}
+                  <TouchableOpacity style={styles.rowCardHead} onPress={() => toggleExpand(row.id)} activeOpacity={0.7}>
                     <View style={styles.rowCardTitle}>
                       <View style={styles.flatBadge}><Text style={styles.flatBadgeText}>{row.flat || '?'}</Text></View>
+                      {row.tenantName ? <Text style={styles.walkTenant} numberOfLines={1}>{row.tenantName}</Text> : null}
                       {total > 0 && <Text style={styles.rowTotal}>{currency} {total.toFixed(2)}</Text>}
                     </View>
                     <View style={styles.rowActions}>
-                      {/* Preview Bill Slip */}
-                      <TouchableOpacity style={[styles.rowActionBtn, { backgroundColor: colors.primaryXLight }]} onPress={() => setSlipRow(row)}>
-                        <MaterialIcons name="receipt" size={12} color={colors.primaryMid} />
-                      </TouchableOpacity>
-                      {/* SMS */}
-                      <TouchableOpacity style={[styles.rowActionBtn, { backgroundColor: colors.infoBg }]} onPress={() => sendSMS(row)}>
-                        <MaterialIcons name="chat-bubble-outline" size={12} color={colors.info} />
-                      </TouchableOpacity>
-                      {/* PDF */}
-                      <TouchableOpacity style={[styles.rowActionBtn, { backgroundColor: '#E7F8F0' }]} onPress={() => exportSinglePDF(row)}>
-                        <MaterialIcons name="picture-as-pdf" size={12} color="#25D366" />
-                      </TouchableOpacity>
+                      {total > 0 && (
+                        <TouchableOpacity style={[styles.rowActionBtn, { backgroundColor: colors.primaryXLight }]} onPress={() => setSlipRow(row)}>
+                          <MaterialIcons name="receipt" size={12} color={colors.primaryMid} />
+                        </TouchableOpacity>
+                      )}
                       <TouchableOpacity style={[styles.rowActionBtn, { backgroundColor: colors.dangerBg }]} onPress={() => removeRow(row.id)}>
                         <MaterialIcons name="close" size={12} color={colors.danger} />
                       </TouchableOpacity>
+                      <MaterialIcons name={isExpanded ? 'expand-less' : 'expand-more'} size={18} color={colors.textMuted} />
                     </View>
-                  </View>
+                  </TouchableOpacity>
 
-                  {/* Validation errors */}
-                  {isPrevError && (
-                    <View style={styles.validationError}>
-                      <MaterialIcons name="cancel" size={12} color={colors.dangerMid} />
-                      <Text style={{ fontSize: 11, color: colors.dangerMid, flex: 1 }}>Present reading must be greater than or equal to previous reading</Text>
-                    </View>
-                  )}
-                  {spike && (
-                    <View style={styles.spikeAlert}>
-                      <MaterialIcons name="flash-on" size={12} color={colors.warningMid} />
-                      <Text style={{ fontSize: 11, color: colors.warningMid, flex: 1 }}>Spike Alert: {cons} units is {((cons / avgConsumption - 1) * 100).toFixed(0)}% above average. Verify reading.</Text>
-                    </View>
-                  )}
-
-                  <View style={styles.row2}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>Flat No.</Text>
-                      {row.fromSeed ? (
-                        <View style={[styles.input, styles.readOnly]}><Text style={styles.readOnlyTxt}>{row.flat || '-'}</Text></View>
-                      ) : (
-                        <TextInput style={styles.input} value={row.flat} onChangeText={v => updateRow(row.id, 'flat', v)} placeholder="A1" placeholderTextColor={colors.textMuted} />
+                  {isExpanded && (
+                    <View style={{ marginTop: 4 }}>
+                      {/* Validation errors */}
+                      {isPrevError && (
+                        <View style={styles.validationError}>
+                          <MaterialIcons name="cancel" size={12} color={colors.dangerMid} />
+                          <Text style={{ fontSize: 11, color: colors.dangerMid, flex: 1 }}>Present reading is lower than previous. Check the meter.</Text>
+                        </View>
                       )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>Tenant</Text>
-                      {row.fromSeed ? (
-                        <View style={[styles.input, styles.readOnly]}><Text style={styles.readOnlyTxt} numberOfLines={1}>{row.tenantName || 'Vacant'}</Text></View>
-                      ) : (
-                        <TextInput style={styles.input} value={row.tenantName} onChangeText={v => updateRow(row.id, 'tenantName', v)} placeholder="Tenant name" placeholderTextColor={colors.textMuted} />
+                      {spike && (
+                        <View style={styles.spikeAlert}>
+                          <MaterialIcons name="flash-on" size={12} color={colors.warningMid} />
+                          <Text style={{ fontSize: 11, color: colors.warningMid, flex: 1 }}>Spike: {cons} units is {((cons / avgConsumption - 1) * 100).toFixed(0)}% above average. Verify reading.</Text>
+                        </View>
                       )}
-                    </View>
-                  </View>
-                  <Text style={styles.label}>Phone</Text>
-                  {row.fromSeed ? (
-                    <View style={[styles.input, styles.readOnly]}><Text style={styles.readOnlyTxt}>{row.contact || 'No phone'}</Text></View>
-                  ) : (
-                    <TextInput style={styles.input} value={row.contact} onChangeText={v => updateRow(row.id, 'contact', v)} placeholder="+254... or email@..." placeholderTextColor={colors.textMuted} keyboardType="email-address" autoCapitalize="none" />
-                  )}
 
-                  <View style={styles.row3}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>Previous</Text>
+                      <View style={styles.row2}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.label}>Flat No.</Text>
+                          {row.fromSeed ? (
+                            <View style={[styles.input, styles.readOnly]}><Text style={styles.readOnlyTxt}>{row.flat || '-'}</Text></View>
+                          ) : (
+                            <TextInput style={styles.input} value={row.flat} onChangeText={v => updateRow(row.id, 'flat', v)} placeholder="A1" placeholderTextColor={colors.textMuted} />
+                          )}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.label}>Tenant</Text>
+                          {row.fromSeed ? (
+                            <View style={[styles.input, styles.readOnly]}><Text style={styles.readOnlyTxt} numberOfLines={1}>{row.tenantName || 'Vacant'}</Text></View>
+                          ) : (
+                            <TextInput style={styles.input} value={row.tenantName} onChangeText={v => updateRow(row.id, 'tenantName', v)} placeholder="Tenant name" placeholderTextColor={colors.textMuted} />
+                          )}
+                        </View>
+                      </View>
+                      <Text style={styles.label}>Phone / WhatsApp</Text>
                       {row.fromSeed ? (
-                        <View style={[styles.input, styles.readOnly]}><Text style={styles.readOnlyTxt}>{row.prev || '0'}</Text></View>
+                        <View style={[styles.input, styles.readOnly]}><Text style={styles.readOnlyTxt}>{row.contact || 'No phone'}</Text></View>
                       ) : (
-                        <TextInput style={styles.input} value={row.prev} onChangeText={v => updateRow(row.id, 'prev', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textMuted} />
+                        <TextInput style={styles.input} value={row.contact} onChangeText={v => updateRow(row.id, 'contact', v)} placeholder="+254... or email@..." placeholderTextColor={colors.textMuted} keyboardType="email-address" autoCapitalize="none" />
                       )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.label, row.fromSeed && { color: colors.primaryMid }]}>Present {row.fromSeed ? '(auto)' : ''}</Text>
-                      <TextInput style={[styles.input, row.fromSeed && { borderColor: colors.primaryMid, borderWidth: 2 }, isPrevError && { borderColor: colors.dangerMid }]} value={row.pres} onChangeText={v => updateRow(row.id, 'pres', v)} keyboardType="decimal-pad" placeholder="Enter reading" placeholderTextColor={colors.textMuted} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>Arrears</Text>
-                      {row.fromSeed ? (
-                        <View style={[styles.input, styles.readOnly]}><Text style={[styles.readOnlyTxt, parseFloat(row.arrears) > 0 && { color: colors.dangerMid }]}>{row.arrears || '0'}</Text></View>
-                      ) : (
-                        <TextInput style={styles.input} value={row.arrears} onChangeText={v => updateRow(row.id, 'arrears', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textMuted} />
+
+                      {isMeterBill && (
+                        <View style={styles.row3}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.label}>Previous</Text>
+                            {row.fromSeed ? (
+                              <View style={[styles.input, styles.readOnly]}><Text style={styles.readOnlyTxt}>{row.prev || '0'}</Text></View>
+                            ) : (
+                              <TextInput style={styles.input} value={row.prev} onChangeText={v => updateRow(row.id, 'prev', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textMuted} />
+                            )}
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.label, row.fromSeed && { color: colors.primaryMid }]}>Present</Text>
+                            <TextInput style={[styles.input, row.fromSeed && { borderColor: colors.primaryMid, borderWidth: 2 }, isPrevError && { borderColor: colors.dangerMid }]} value={row.pres} onChangeText={v => updateRow(row.id, 'pres', v)} keyboardType="decimal-pad" placeholder="Enter reading" placeholderTextColor={colors.textMuted} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.label}>Arrears</Text>
+                            {row.fromSeed ? (
+                              <View style={[styles.input, styles.readOnly]}><Text style={[styles.readOnlyTxt, parseFloat(row.arrears) > 0 && { color: colors.dangerMid }]}>{row.arrears || '0'}</Text></View>
+                            ) : (
+                              <TextInput style={styles.input} value={row.arrears} onChangeText={v => updateRow(row.id, 'arrears', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textMuted} />
+                            )}
+                          </View>
+                        </View>
                       )}
-                    </View>
-                  </View>
 
-                  {/* Meter photo */}
-                  <PhotoPicker
-                    label="Meter Photo"
-                    value={rowPhotos[row.id] || null}
-                    onChange={photo => setRowPhoto(row.id, photo)}
-                    propertyName={house || selectedProp?.name}
-                    unitLabel={`Flat ${row.flat}`}
-                  />
+                      {!isMeterBill && (
+                        <View style={styles.row2}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.label}>Amount</Text>
+                            <TextInput style={styles.input} value={row.prev} onChangeText={v => updateRow(row.id, 'prev', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textMuted} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.label}>Arrears</Text>
+                            {row.fromSeed ? (
+                              <View style={[styles.input, styles.readOnly]}><Text style={[styles.readOnlyTxt, parseFloat(row.arrears) > 0 && { color: colors.dangerMid }]}>{row.arrears || '0'}</Text></View>
+                            ) : (
+                              <TextInput style={styles.input} value={row.arrears} onChangeText={v => updateRow(row.id, 'arrears', v)} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.textMuted} />
+                            )}
+                          </View>
+                        </View>
+                      )}
 
-                  {cons > 0 && (
-                    <View style={styles.calcRow}>
-                      <MaterialIcons name="calculate" size={12} color={colors.success} />
-                      <Text style={styles.calcText}>{cons} units × {parseFloat(unitCost || 0).toFixed(2)} = </Text>
-                      <Text style={styles.calcTotal}>{currency} {total.toFixed(2)}</Text>
+                      {isMeterBill && (
+                        <PhotoPicker
+                          label="Meter Photo"
+                          value={rowPhotos[row.id] || null}
+                          onChange={photo => setRowPhoto(row.id, photo)}
+                          propertyName={house || selectedProp?.name}
+                          unitLabel={`Flat ${row.flat}`}
+                        />
+                      )}
+
+                      {cons > 0 && (
+                        <View style={styles.calcRow}>
+                          <MaterialIcons name="calculate" size={12} color={colors.success} />
+                          <Text style={styles.calcText}>{cons} units × {parseFloat(unitCost || 0).toFixed(2)} = </Text>
+                          <Text style={styles.calcTotal}>{currency} {total.toFixed(2)}</Text>
+                        </View>
+                      )}
+
+                      {/* Per-row send actions */}
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                        <TouchableOpacity style={[styles.rowSendBtn, { backgroundColor: colors.infoBg, borderColor: colors.primaryLight }]} onPress={() => sendSMS(row)}>
+                          <MaterialIcons name="chat-bubble-outline" size={13} color={colors.primaryMid} />
+                          <Text style={[styles.rowSendTxt, { color: colors.primaryMid }]}>SMS</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.rowSendBtn, { backgroundColor: '#E7F8F0', borderColor: '#86EFAC' }]} onPress={() => exportSinglePDF(row)}>
+                          <MaterialIcons name="picture-as-pdf" size={13} color="#059669" />
+                          <Text style={[styles.rowSendTxt, { color: '#059669' }]}>PDF</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.rowSendBtn, { backgroundColor: '#E7F8F0', borderColor: '#86EFAC' }]} onPress={() => shareViaWA(singleBillText(row), row.contact)}>
+                          <MaterialIcons name="send" size={13} color="#059669" />
+                          <Text style={[styles.rowSendTxt, { color: '#059669' }]}>WhatsApp</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   )}
                 </View>
@@ -948,7 +1008,7 @@ export default function BillGeneratorScreen({ navigation }) {
             </View>
           )}
 
-          {!isCaretaker && grandTotal > 0 && (
+          {!isCaretaker && activeTab === 'billing' && grandTotal > 0 && (
             <View style={styles.grandCard}>
               <View>
                 <Text style={styles.grandLabel}>Grand Total</Text>
@@ -958,33 +1018,41 @@ export default function BillGeneratorScreen({ navigation }) {
             </View>
           )}
 
-          {!isCaretaker && <View style={styles.section}>
+          {!isCaretaker && activeTab === 'billing' && <View style={styles.section}>
             <Text style={styles.sectionLabel}>Payment Note (optional)</Text>
             <View style={styles.card}>
-              <TextInput style={[styles.input, styles.textarea]} value={note} onChangeText={setNote} placeholder={'e.g. Pay within 7 days.\nM-Pesa Till No. XXXXXX'} placeholderTextColor={colors.textMuted} multiline textAlignVertical="top" />
+              <TextInput style={[styles.input, styles.textarea]} value={note} onChangeText={setNote} placeholder={'e.g. Pay within 7 days. M-Pesa Paybill 123456.'} placeholderTextColor={colors.textMuted} multiline textAlignVertical="top" />
             </View>
           </View>}
 
-          {!isCaretaker && <View style={[styles.section, { gap: 10 }]}>
-            <TouchableOpacity style={styles.btnGreen} onPress={exportPDF}>
-              <MaterialIcons name="picture-as-pdf" size={18} color="#fff" />
-              <Text style={styles.btnText}>Export Property Bill PDF</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.btnGreen, { backgroundColor: colors.info }]} onPress={exportPDF}>
-              <MaterialIcons name="description" size={18} color="#fff" />
-              <Text style={styles.btnText}>Export PDF</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.btnPurple} onPress={() => setShowBatchModal(true)}>
-              <MaterialIcons name="people" size={18} color="#fff" />
-              <Text style={styles.btnText}>Send to All Tenants</Text>
-            </TouchableOpacity>
-          </View>}
+          {/* History & Payments tab */}
+          {!isCaretaker && activeTab === 'payments' && (
+            <View style={{ flex: 1, alignItems: 'center', paddingTop: 60, paddingHorizontal: spacing.md }}>
+              <MaterialIcons name="receipt-long" size={44} color={colors.textMuted} />
+              <Text style={{ fontSize: 17, fontWeight: '800', color: colors.text, marginTop: 14 }}>No payment history yet</Text>
+              <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 6, textAlign: 'center', lineHeight: 20 }}>Once tenants pay, their records will appear here. Log payments against individual bills to track collection status.</Text>
+            </View>
+          )}
 
-          <View style={{ height: 48 }} />
+          <View style={{ height: 100 }} />
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <PickerModal visible={showPropModal} onClose={() => setShowPropModal(false)} options={PROPERTIES.map(p => p.name)} selected={selectedProp?.name} onSelect={name => { const p = PROPERTIES.find(x => x.name === name); if (p) { setSelectedPropertyId(p.id); loadPropertyRows(p.id); } }} />
+      {/* Sticky bottom bar for landlord */}
+      {!isCaretaker && activeTab === 'billing' && (
+        <View style={styles.stickyBar}>
+          <TouchableOpacity style={styles.stickyBtnPDF} onPress={exportPDF} activeOpacity={0.85}>
+            <MaterialIcons name="description" size={16} color="#fff" />
+            <Text style={styles.stickyBtnText}>Property PDF</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.stickyBtnSend} onPress={() => setShowBatchModal(true)} activeOpacity={0.85}>
+            <MaterialIcons name="people" size={16} color="#fff" />
+            <Text style={styles.stickyBtnText}>Send to Tenants</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <PickerModal visible={showPropModal} onClose={() => setShowPropModal(false)} options={properties.map(p => p.name)} selected={selectedProp?.name} onSelect={name => { const p = properties.find(x => x.name === name); if (p) { setSelectedPropertyId(p.id); loadPropertyRows(p.id); } }} />
 
       <Modal visible={showBatchModal} animationType="slide" onRequestClose={() => setShowBatchModal(false)}>
         <SafeAreaView style={styles.batchSafe}>
@@ -1010,7 +1078,7 @@ export default function BillGeneratorScreen({ navigation }) {
                   <TouchableOpacity
                     style={styles.tenantCardLeft}
                     onPress={() => {
-                      const unit = (UNITS[selectedPropertyId] || []).find(u => u.unit.toUpperCase() === (row.flat || '').toUpperCase());
+                      const unit = (allUnits[selectedPropertyId] || []).find(u => u.unit.toUpperCase() === (row.flat || '').toUpperCase());
                       if (unit && selectedPropertyId) setTenantSheetTarget({ propertyId: selectedPropertyId, unitId: unit.id });
                     }}
                     activeOpacity={0.75}
@@ -1231,4 +1299,17 @@ const styles = StyleSheet.create({
   slipTable: { borderTopWidth: 1, borderTopColor: colors.border },
   slipFooter: { fontSize: 9, color: colors.textMuted, textAlign: 'center', padding: 10 },
   slipShareBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#25D366', margin: 12, marginTop: 0, borderRadius: radius.sm, paddingVertical: 11 },
+  headerPdfBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primaryMid, paddingHorizontal: 10, paddingVertical: 7, borderRadius: radius.sm },
+  headerPdfText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  tabBar: { flexDirection: 'row', backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: spacing.md },
+  tab: { paddingVertical: 10, paddingHorizontal: 4, marginRight: 20, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabActive: { borderBottomColor: colors.primaryMid },
+  tabText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  tabTextActive: { color: colors.primaryMid, fontWeight: '800' },
+  stickyBar: { flexDirection: 'row', gap: 10, paddingHorizontal: spacing.md, paddingVertical: 12, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border },
+  stickyBtnPDF: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: colors.primaryMid, borderRadius: radius.md, paddingVertical: 14 },
+  stickyBtnSend: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: colors.success, borderRadius: radius.md, paddingVertical: 14 },
+  stickyBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  rowSendBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 1.5, borderRadius: 8, paddingVertical: 8 },
+  rowSendTxt: { fontSize: 12, fontWeight: '700' },
 });

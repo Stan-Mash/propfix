@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { PROPERTIES, UNITS, CONTRACTORS, getMasterMeterVariance } from '../../data/seed';
+import { CONTRACTORS } from '../../data/seed';
+import { usePortfolio } from '../../context/PortfolioContext';
 import { useTickets } from '../../context/TicketsContext';
 import ScreenHeader from '../../components/ScreenHeader';
 import BottomSheet from '../../components/BottomSheet';
@@ -19,20 +20,34 @@ const ticketPlace = (t) => (t.unit ? `Unit ${t.unit}` : t.areaLabel || 'Common A
 export default function CaretakerDashboard({ navigation }) {
   const { userProfile, logout } = useAuth();
   const { tickets, addQuotation, updateTicketStatus } = useTickets();
+  const { properties, units, getVariance } = usePortfolio();
 
   const site =
-    PROPERTIES.find(p => userProfile?.assignedProperties?.includes(p.id)) ||
-    PROPERTIES.find(p => p.caretakerId === userProfile?.uid) ||
-    PROPERTIES[0];
+    properties.find(p => (userProfile?.assignedProperties || []).includes(p.id)) ||
+    properties.find(p => p.caretakerId === userProfile?.uid) ||
+    properties[0];
   const firstName = (userProfile?.name || 'Caretaker').split(' ')[0];
   const unitLabel = (t) => ticketPlace(t);
+
+  // Guard: show empty state when no properties are assigned
+  if (!site) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+        <MaterialIcons name="apartment" size={40} color={colors.textMuted} />
+        <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text, marginTop: 12 }}>No Site Assigned</Text>
+        <Text style={{ fontSize: 14, color: colors.textMuted, marginTop: 6, textAlign: 'center' }}>
+          Your account has not been assigned to a property yet. Contact your landlord or manager.
+        </Text>
+      </View>
+    );
+  }
 
   // Today's queue is derived from live ticket and unit state, so finished tasks drop off
   const siteTickets = tickets.filter(t => t.propertyId === site.id);
   const quoteTasks = siteTickets.filter(t => ['reported', 'quotes_uploaded'].includes(t.status) && (t.quotations?.length || 0) < QUOTES_NEEDED);
   const workTasks = siteTickets.filter(t => ['approved', 'in_progress'].includes(t.status));
-  const moveOutTasks = (UNITS[site.id] || []).filter(u => u.status === 'on_notice');
-  const leak = getMasterMeterVariance(site.id);
+  const moveOutTasks = (units[site.id] || []).filter(u => u.status === 'on_notice');
+  const leak = getVariance(site.id);
   const taskCount = quoteTasks.length + workTasks.length + moveOutTasks.length;
 
   const [flash, setFlash] = useState('');

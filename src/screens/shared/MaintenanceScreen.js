@@ -3,7 +3,8 @@ import { View, Text, ScrollView, TouchableOpacity, TextInput, FlatList, Alert, S
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTickets } from '../../context/TicketsContext';
-import { PROPERTIES, STATUS_COLORS, STATUS_LABELS, PRIORITY_COLORS, CONTRACTORS, CATEGORY_ICONS, CATEGORY_COLORS } from '../../data/seed';
+import { STATUS_COLORS, STATUS_LABELS, PRIORITY_COLORS, CONTRACTORS, CATEGORY_ICONS, CATEGORY_COLORS } from '../../data/seed';
+import { usePortfolio } from '../../context/PortfolioContext';
 import ScreenHeader from '../../components/ScreenHeader';
 import SegmentedControl from '../../components/SegmentedControl';
 import BottomSheet from '../../components/BottomSheet';
@@ -34,6 +35,7 @@ const CATEGORIES = Object.keys(CATEGORY_COLORS).map(key => ({ key, icon: CATEGOR
 export default function MaintenanceScreen({ navigation, route }) {
   const { userProfile } = useAuth();
   const { tickets: allTickets } = useTickets();
+  const { properties } = usePortfolio();
   const [segment, setSegment] = useState('active');
   const [search, setSearch] = useState('');
   const [propertyFilter, setPropertyFilter] = useState('');
@@ -68,8 +70,8 @@ export default function MaintenanceScreen({ navigation, route }) {
   }, [allTickets, isCaretaker, userProfile]);
 
   const selectableProps = isCaretaker && userProfile?.assignedProperties?.length
-    ? PROPERTIES.filter(p => userProfile.assignedProperties.includes(p.id))
-    : PROPERTIES;
+    ? properties.filter(p => userProfile.assignedProperties.includes(p.id))
+    : properties;
 
   const scoped = useMemo(() => {
     let t = baseTickets;
@@ -107,7 +109,7 @@ export default function MaintenanceScreen({ navigation, route }) {
     return counts;
   }, [inView]);
 
-  const filterLabel = [PROPERTIES.find(p => p.id === propertyFilter)?.name, QUICK[quick]?.label].filter(Boolean).join(' · ');
+  const filterLabel = [properties.find(p => p.id === propertyFilter)?.name, QUICK[quick]?.label].filter(Boolean).join(' · ');
 
   const clearFilter = () => {
     setPropertyFilter('');
@@ -197,11 +199,9 @@ export default function MaintenanceScreen({ navigation, route }) {
                 onPress={() => setCategoryFilter(active ? '' : cat.key)}
                 activeOpacity={0.8}
               >
-                <View style={[s.catIconWrap, { backgroundColor: active ? 'rgba(255,255,255,0.22)' : cat.color + '18' }]}>
-                  <MaterialIcons name={cat.icon} size={20} color={active ? '#fff' : cat.color} />
-                </View>
+                <MaterialIcons name={cat.icon} size={15} color={active ? '#fff' : cat.color} />
                 <Text style={[s.catLabel, active && { color: '#fff', fontWeight: '700' }]}>{cat.key}</Text>
-                <Text style={[s.catCount, { color: active ? '#fff' : cat.color }]}>{count}</Text>
+                {count > 0 && <Text style={[s.catCount, { color: active ? 'rgba(255,255,255,0.8)' : cat.color }]}>{count}</Text>}
               </TouchableOpacity>
             );
           })}
@@ -226,12 +226,6 @@ export default function MaintenanceScreen({ navigation, route }) {
           <View style={s.empty}>
             <MaterialIcons name="handyman" size={36} color={colors.textMuted} />
             <Text style={s.emptyTxt}>No repairs found</Text>
-            {hasFilter && (
-              <TouchableOpacity style={[s.clearBtn, { marginTop: 6 }]} onPress={clearFilter} activeOpacity={0.8}>
-                <MaterialIcons name="close" size={16} color="#fff" />
-                <Text style={s.clearTxt}>Clear Filter</Text>
-              </TouchableOpacity>
-            )}
           </View>
         }
         renderItem={({ item: t }) => (
@@ -381,11 +375,10 @@ const s = StyleSheet.create({
   propBtnOn: { borderColor: colors.primaryMid, backgroundColor: colors.primaryMid },
 
   // Category cards
-  catRow: { paddingHorizontal: spacing.md, gap: 8, paddingBottom: 10, paddingTop: 2 },
-  catCard: { width: 82, alignItems: 'center', gap: 4, paddingVertical: 10, borderRadius: 16, borderWidth: 1.5, borderColor: colors.borderStrong, backgroundColor: colors.surface },
-  catIconWrap: { width: 40, height: 40, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
-  catLabel: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
-  catCount: { fontSize: 16, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  catRow: { paddingHorizontal: spacing.md, gap: 6, paddingBottom: 8, paddingTop: 2 },
+  catCard: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5, borderColor: colors.borderStrong, backgroundColor: colors.surface },
+  catLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  catCount: { fontSize: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
 
   // Repair cards
   card: { ...card, overflow: 'hidden' },

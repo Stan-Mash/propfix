@@ -4,7 +4,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import RoleSwitcher from './RoleSwitcher';
 
-const HEADER_BG = '#0F172A';
+const HEADER_BG = '#0B1320';
 export const TOP_INSET = Math.max(Platform.OS === 'android' ? (StatusBar.currentHeight || 38) : 44, 38) + 12;
 
 export default function ScreenHeader({ title, subtitle, showBack = false, rightAction, showRoleSwitcher = false }) {
@@ -34,7 +34,7 @@ export default function ScreenHeader({ title, subtitle, showBack = false, rightA
 }
 
 const s = StyleSheet.create({
-  wrapper: { backgroundColor: HEADER_BG, borderBottomWidth: 1, borderBottomColor: '#1E293B' },
+  wrapper: { backgroundColor: HEADER_BG, borderBottomWidth: 1, borderBottomColor: '#1E2B42' },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 12 },
   back: { width: 34, height: 34, justifyContent: 'center', alignItems: 'center', borderRadius: 8, backgroundColor: '#1E293B', marginRight: 10 },
   mid: { flex: 1 },

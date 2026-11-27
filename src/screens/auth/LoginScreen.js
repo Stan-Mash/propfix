@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, KeyboardAvoidingView, Platform, ScrollView, Image,
+  Alert, KeyboardAvoidingView, Platform, ScrollView, Modal,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -14,7 +14,11 @@ export default function LoginScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const { login, googleSignIn } = useAuth();
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const { login, googleSignIn, resetPassword } = useAuth();
 
   const validate = () => {
     const e = {};
@@ -40,6 +44,22 @@ export default function LoginScreen({ navigation }) {
       Alert.alert('Sign In Failed', msg);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgot = async () => {
+    if (!forgotEmail.trim() || !/\S+@\S+\.\S+/.test(forgotEmail)) {
+      Alert.alert('Invalid Email', 'Enter a valid email address.');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      await resetPassword(forgotEmail.trim().toLowerCase());
+      setForgotSent(true);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Could not send reset email.');
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -78,7 +98,7 @@ export default function LoginScreen({ navigation }) {
             </View>
           </View>
           <Text style={styles.appName}>PropFix</Text>
-          <Text style={styles.tagline}>Property Maintenance Tracker</Text>
+          <Text style={styles.tagline}>Property Operations, Billing & Maintenance</Text>
         </View>
 
         <View style={styles.card}>
@@ -125,6 +145,10 @@ export default function LoginScreen({ navigation }) {
             <Text style={styles.btnText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
           </TouchableOpacity>
 
+          <TouchableOpacity style={styles.forgotRow} onPress={() => { setShowForgot(true); setForgotSent(false); setForgotEmail(email); }}>
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          </TouchableOpacity>
+
           {/* Divider */}
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
@@ -139,10 +163,7 @@ export default function LoginScreen({ navigation }) {
             disabled={loading || googleLoading}
             activeOpacity={0.8}
           >
-            {/* Google "G" coloured icon using text — no external icon set needed */}
-            <View style={styles.googleIcon}>
-              <Text style={styles.googleG}>G</Text>
-            </View>
+            <GoogleMark />
             <Text style={styles.socialBtnText}>{googleLoading ? 'Connecting...' : 'Continue with Google'}</Text>
           </TouchableOpacity>
 
@@ -153,12 +174,65 @@ export default function LoginScreen({ navigation }) {
         </View>
 
       </ScrollView>
+
+      {/* Forgot Password Modal */}
+      <Modal visible={showForgot} transparent animationType="fade" onRequestClose={() => setShowForgot(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {forgotSent ? (
+              <>
+                <MaterialIcons name="mark-email-read" size={40} color={colors.primaryMid} style={{ marginBottom: 12 }} />
+                <Text style={styles.modalTitle}>Check your inbox</Text>
+                <Text style={styles.modalBody}>A password reset link has been sent to {forgotEmail}. Check your spam folder if it doesn't arrive.</Text>
+                <TouchableOpacity style={styles.modalBtn} onPress={() => setShowForgot(false)}>
+                  <Text style={styles.modalBtnTxt}>Done</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.modalTitle}>Reset Password</Text>
+                <Text style={styles.modalBody}>Enter your account email and we'll send a reset link.</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={forgotEmail}
+                  onChangeText={setForgotEmail}
+                  placeholder="you@company.co.ke"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+                  <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowForgot(false)}>
+                    <Text style={styles.modalCancelTxt}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.modalBtn, { flex: 1 }, forgotLoading && { opacity: 0.6 }]} onPress={handleForgot} disabled={forgotLoading}>
+                    <Text style={styles.modalBtnTxt}>{forgotLoading ? 'Sending...' : 'Send Link'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
 
+function GoogleMark() {
+  return (
+    <View style={{ width: 20, height: 20, position: 'relative' }}>
+      <View style={{ position: 'absolute', top: 0, left: 0, width: 10, height: 10, backgroundColor: '#4285F4', borderTopLeftRadius: 10 }} />
+      <View style={{ position: 'absolute', top: 0, right: 0, width: 10, height: 10, backgroundColor: '#EA4335', borderTopRightRadius: 10 }} />
+      <View style={{ position: 'absolute', bottom: 0, right: 0, width: 10, height: 10, backgroundColor: '#34A853', borderBottomRightRadius: 10 }} />
+      <View style={{ position: 'absolute', bottom: 0, left: 0, width: 10, height: 10, backgroundColor: '#FBBC05', borderBottomLeftRadius: 10 }} />
+      <View style={{ position: 'absolute', top: 4, left: 4, width: 12, height: 12, backgroundColor: colors.surface, borderRadius: 6 }} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.primary },
+  flex: { flex: 1, backgroundColor: '#0B1320' },
   container: { flexGrow: 1, padding: spacing.md, paddingTop: 56, paddingBottom: 40 },
   brand: { alignItems: 'center', marginBottom: 28 },
   logoBox: { width: 72, height: 72, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.18)', justifyContent: 'center', alignItems: 'center', marginBottom: 14 },
@@ -184,4 +258,17 @@ const styles = StyleSheet.create({
   socialBtnText: { fontSize: 14, fontWeight: '600', color: colors.text },
   registerRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 14 },
   registerText: { fontSize: 13, color: colors.textSecondary },
+  forgotRow: { alignItems: 'center', marginTop: 10, marginBottom: 4 },
+  forgotText: { fontSize: 13, color: colors.primaryMid, fontWeight: '600' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
+  modalCard: { backgroundColor: colors.surface, borderRadius: 20, padding: 24, width: '100%', alignItems: 'center' },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 8, textAlign: 'center' },
+  modalBody: { fontSize: 14, color: colors.textSecondary, lineHeight: 21, marginBottom: 16, textAlign: 'center' },
+  modalInput: { width: '100%', borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.sm, paddingHorizontal: 12, paddingVertical: 12, fontSize: 15, color: colors.text, backgroundColor: colors.inputBg },
+  modalBtn: { backgroundColor: colors.primaryMid, borderRadius: radius.sm, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', minWidth: 100 },
+  modalBtnTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  modalCancelBtn: { flex: 1, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.sm, paddingVertical: 14, alignItems: 'center' },
+  modalCancelTxt: { fontSize: 15, fontWeight: '700', color: colors.text },
+  googleIcon: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff', borderWidth: 1, borderColor: '#dadce0', justifyContent: 'center', alignItems: 'center' },
+  googleG: { fontSize: 12, fontWeight: '700', color: '#4285F4' },
 });

@@ -1,21 +1,29 @@
-import React from 'react';
+﻿import React, { useMemo } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { PROPERTIES, UNITS, STATUS_COLORS, PRIORITY_COLORS } from '../../data/seed';
+import { STATUS_COLORS, PRIORITY_COLORS } from '../../data/seed';
 import { useTickets } from '../../context/TicketsContext';
+import { usePortfolio } from '../../context/PortfolioContext';
 import ScreenHeader from '../../components/ScreenHeader';
 import { colors, radius, spacing, card, accent } from '../../theme';
 
-const fmt = (n) => 'KES ' + n.toLocaleString();
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const _now = new Date();
+const MONTH_KEY = `${MONTH_NAMES[_now.getMonth()]}-${_now.getFullYear()}`;
+const MONTH_SHORT = MONTH_NAMES[_now.getMonth()].slice(0, 3);
+const YEAR = _now.getFullYear();
+
+const fmt = (n) => 'KES ' + Number(n || 0).toLocaleString();
 
 export default function ManagerDashboard({ navigation }) {
   const { userProfile } = useAuth();
   const { tickets: allTickets } = useTickets();
+  const { properties, units: allUnits, paidTotal, computeUnitTotal } = usePortfolio();
 
   // Manager sees properties assigned to them
-  const myProperties = PROPERTIES.filter(p => p.managerId === userProfile?.uid);
-  const allProps = myProperties.length > 0 ? myProperties : PROPERTIES;
+  const myProperties = properties.filter(p => p.managerId === userProfile?.uid);
+  const allProps = myProperties.length > 0 ? myProperties : properties;
 
   const myPropIds = new Set(allProps.map(p => p.id));
   const myTickets = allTickets.filter(t => myPropIds.has(t.propertyId));
@@ -23,7 +31,18 @@ export default function ManagerDashboard({ navigation }) {
   const escalated = myTickets.filter(t => ['Emergency', 'Urgent'].includes(t.priority) && !['resolved', 'rejected'].includes(t.status));
   const needsAction = myTickets.filter(t => ['reported', 'quotes_uploaded', 'awaiting_approval'].includes(t.status));
   const openCount = myTickets.filter(t => !['resolved', 'rejected'].includes(t.status)).length;
-  const totalSpend = allProps.reduce((s, p) => s + p.monthlySpend, 0);
+
+  const { totalBilled, totalCollected, collectionPct } = useMemo(() => {
+    let billed = 0, collected = 0;
+    allProps.forEach(p => {
+      (allUnits[p.id] || []).forEach(u => {
+        if (!u.tenant) return;
+        billed += computeUnitTotal(u) + (u.arrears || 0);
+        collected += paidTotal(p.id, u.id, MONTH_KEY);
+      });
+    });
+    return { totalBilled: billed, totalCollected: collected, collectionPct: billed > 0 ? Math.round((collected / billed) * 100) : 0 };
+  }, [allProps, allUnits, paidTotal, computeUnitTotal]);
 
   return (
     <View style={s.root}>
@@ -41,10 +60,19 @@ export default function ManagerDashboard({ navigation }) {
 
         {/* Metrics row */}
         <View style={s.metricsRow}>
-          <MetricCard label="My Properties" value={String(allProps.length)} icon="business" color={colors.purpleMid} />
+          <MetricCard label="Properties" value={String(allProps.length)} icon="business" color={colors.purpleMid} />
           <MetricCard label="Open Repairs" value={String(openCount)} icon="build" color={colors.warningMid} />
-          <MetricCard label="Monthly Spend" value={fmt(totalSpend)} icon="credit-card" color={colors.primaryMid} wide />
+          <MetricCard label={`${MONTH_SHORT} ${YEAR} Collection`} value={`${collectionPct}%`} icon="payments" color={collectionPct >= 80 ? colors.successMid : colors.dangerMid} wide />
         </View>
+
+        {/* Collection banner */}
+        {totalBilled > 0 && collectionPct < 70 && (
+          <TouchableOpacity style={s.escalBanner} onPress={() => navigation.navigate('Bills')} activeOpacity={0.8}>
+            <MaterialIcons name="warning" size={18} color={colors.warning} />
+            <Text style={s.escalTxt}>{fmt(totalBilled - totalCollected)} rent still outstanding this month</Text>
+            <MaterialIcons name="chevron-right" size={14} color={colors.warning} />
+          </TouchableOpacity>
+        )}
 
         {/* Escalation banner */}
         {escalated.length > 0 && (
@@ -54,6 +82,12 @@ export default function ManagerDashboard({ navigation }) {
             <MaterialIcons name="chevron-right" size={14} color={colors.danger} />
           </TouchableOpacity>
         )}
+
+        {/* Complaints */}
+        <View style={s.secRow}>
+          <Text style={s.secTitle}>Complaints</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('ManagerAllComplaints')}><Text style={s.seeAll}>View all</Text></TouchableOpacity>
+        </View>
 
         {/* Needs action */}
         <View style={s.secRow}>
@@ -75,14 +109,14 @@ export default function ManagerDashboard({ navigation }) {
           <TouchableOpacity onPress={() => navigation.navigate('Portfolio')}><Text style={s.seeAll}>View all</Text></TouchableOpacity>
         </View>
         {allProps.map(p => {
-          const units = UNITS[p.id] || [];
-          const occupied = units.filter(u => u.status === 'occupied').length;
+          const propUnits = allUnits[p.id] || [];
+          const occupied = propUnits.filter(u => u.status === 'occupied').length;
           const openHere = myTickets.filter(t => t.propertyId === p.id && !['resolved', 'rejected'].includes(t.status)).length;
           return (
             <TouchableOpacity key={p.id} style={s.pCard} onPress={() => navigation.navigate('UnitRoster', { propertyId: p.id })} activeOpacity={0.8}>
               <View style={{ flex: 1 }}>
                 <Text style={s.pName}>{p.name}</Text>
-                <Text style={s.pSub}>{p.location} · {occupied}/{units.length} occupied</Text>
+                <Text style={s.pSub}>{p.location} · {occupied}/{propUnits.length} occupied</Text>
               </View>
               {openHere > 0 && (
                 <View style={s.openBadge}><Text style={s.openTxt}>{openHere} open</Text></View>
@@ -196,3 +230,4 @@ const s = StyleSheet.create({
   openTxt: { fontSize: 10, fontWeight: '700', color: colors.warning },
   hdrBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center' },
 });
+

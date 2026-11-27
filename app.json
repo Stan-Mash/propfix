@@ -18,14 +18,17 @@
     "ios": {
       "supportsTablet": true
     },
+    "splash": {
+      "backgroundColor": "#0B1320"
+    },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0B1320",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.anonymous.maintenancetracker",
+      "package": "com.propfix.app",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -41,14 +44,14 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "CHABRIN needs camera access to capture meter readings, Before/After photos, and material delivery evidence."
+          "cameraPermission": "PropFix needs camera access to capture meter readings, Before/After photos, and material delivery evidence."
         }
       ],
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow CHABRIN to save meter photos to your gallery.",
-          "savePhotosPermission": "Allow CHABRIN to save photos."
+          "photosPermission": "Allow PropFix to save meter photos to your gallery.",
+          "savePhotosPermission": "Allow PropFix to save photos."
         }
       ]
     ],

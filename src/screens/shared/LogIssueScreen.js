@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTickets } from '../../context/TicketsContext';
-import { PROPERTIES, UNITS } from '../../data/seed';
+import { usePortfolio } from '../../context/PortfolioContext';
 import ScreenHeader from '../../components/ScreenHeader';
 import BottomSheet from '../../components/BottomSheet';
 import { saveTicketDraft, clearDraft } from '../../utils/offline';
@@ -50,11 +50,12 @@ function PickerModal({ visible, title, options, selected, onSelect, onClose }) {
 export default function LogIssueScreen({ navigation, route }) {
   const { userProfile } = useAuth();
   const { addTicket } = useTickets();
+  const { properties, units: allUnits } = usePortfolio();
   const isCaretaker = userProfile?.role === 'caretaker';
 
   const availableProps = isCaretaker && userProfile?.assignedProperties?.length
-    ? PROPERTIES.filter(p => userProfile.assignedProperties.includes(p.id))
-    : PROPERTIES;
+    ? properties.filter(p => userProfile.assignedProperties.includes(p.id))
+    : properties;
 
   const presetId = route?.params?.propertyId;
   const [propertyId, setPropertyId] = useState(
@@ -77,7 +78,7 @@ export default function LogIssueScreen({ navigation, route }) {
   const [showCatPicker, setShowCatPicker] = useState(false);
   const [showAreaPicker, setShowAreaPicker] = useState(false);
 
-  const propUnits = propertyId ? (UNITS[propertyId] || []).map(u => u.unit) : [];
+  const propUnits = propertyId ? (allUnits[propertyId] || []).map(u => u.unit) : [];
   const selectedProp = availableProps.find(p => p.id === propertyId);
 
   // Auto-save draft as user fills form

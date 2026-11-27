@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput } from 'react-native';
 import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -48,6 +48,7 @@ export default function QuotationScreen({ navigation }) {
   const [quotations, setQuotations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('pending');
+  const [search, setSearch] = useState('');
 
   const role = userProfile?.role || 'landlord';
   const isCaretaker = role === 'caretaker';
@@ -68,8 +69,14 @@ export default function QuotationScreen({ navigation }) {
   }, [userProfile?.uid]);
 
   const filtered = quotations.filter(q => {
-    if (isCaretaker) return true;
-    return q.status === tab;
+    if (!isCaretaker && q.status !== tab) return false;
+    if (search.trim()) {
+      const s = search.trim().toLowerCase();
+      return (q.title || '').toLowerCase().includes(s) ||
+             (q.refNumber || '').toLowerCase().includes(s) ||
+             (q.propertyName || '').toLowerCase().includes(s);
+    }
+    return true;
   });
 
   const counts = {
@@ -91,12 +98,32 @@ export default function QuotationScreen({ navigation }) {
         ) : null}
       />
 
+      {/* Search bar */}
+      <View style={styles.searchBar}>
+        <MaterialIcons name="search" size={16} color={colors.textMuted} />
+        <TextInput
+          style={styles.searchInput}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search by title, ref or property..."
+          placeholderTextColor={colors.textMuted}
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <MaterialIcons name="close" size={15} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
+
       {!isCaretaker && (
-        <View style={styles.tabs}>
+        <View style={styles.segControl}>
           {['pending', 'approved', 'rejected'].map(t => (
-            <TouchableOpacity key={t} style={[styles.tabBtn, tab === t && styles.tabActive]} onPress={() => setTab(t)}>
-              <Text style={[styles.tabTxt, tab === t && styles.tabTxtActive]}>
-                {t.charAt(0).toUpperCase() + t.slice(1)}{counts[t] > 0 ? ` (${counts[t]})` : ''}
+            <TouchableOpacity key={t} style={[styles.segBtn, tab === t && styles.segBtnActive]} onPress={() => setTab(t)}>
+              <Text style={[styles.segTxt, tab === t && styles.segTxtActive]}>
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+                {counts[t] > 0 ? (
+                  <Text style={[styles.segCount, tab === t && styles.segCountActive]}> {counts[t]}</Text>
+                ) : null}
               </Text>
             </TouchableOpacity>
           ))}
@@ -107,7 +134,7 @@ export default function QuotationScreen({ navigation }) {
         <ActivityIndicator style={{ marginTop: 40 }} color={colors.primaryMid} />
       ) : filtered.length === 0 ? (
         <View style={styles.empty}>
-          <MaterialIcons name="request-quote" size={48} color={colors.borderStrong} />
+          <MaterialIcons name="description" size={48} color={colors.borderStrong} />
           <Text style={styles.emptyTxt}>No {tab} quotations</Text>
           {canCreate && <Text style={styles.emptyHint}>Tap "New" to create one</Text>}
         </View>
@@ -127,11 +154,15 @@ export default function QuotationScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  tabs: { flexDirection: 'row', backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
-  tabBtn: { flex: 1, paddingVertical: 12, alignItems: 'center' },
-  tabActive: { borderBottomWidth: 2, borderBottomColor: colors.primaryMid },
-  tabTxt: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
-  tabTxtActive: { color: colors.primaryMid },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: 14, paddingVertical: 10 },
+  searchInput: { flex: 1, fontSize: 14, color: colors.text },
+  segControl: { flexDirection: 'row', backgroundColor: colors.surface, paddingHorizontal: 12, paddingVertical: 10, gap: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
+  segBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 20, backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border },
+  segBtnActive: { backgroundColor: colors.primaryMid, borderColor: colors.primaryMid },
+  segTxt: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
+  segTxtActive: { color: '#fff' },
+  segCount: { fontSize: 11, fontWeight: '800', color: colors.textMuted },
+  segCountActive: { color: 'rgba(255,255,255,0.85)' },
   card: { ...card, padding: 14 },
   ref: { fontSize: 11, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5 },
   title: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: 2 },

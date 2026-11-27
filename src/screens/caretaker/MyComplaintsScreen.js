@@ -76,6 +76,14 @@ export default function MyComplaintsScreen({ navigation }) {
 
       <FilterBar filters={FILTERS} active={filter} onChange={setFilter} />
 
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => navigation.navigate('FileComplaint')}
+        activeOpacity={0.85}
+      >
+        <MaterialIcons name="add" size={26} color="#fff" />
+      </TouchableOpacity>
+
       {loading ? (
         <ActivityIndicator color={colors.primaryMid} style={{ marginTop: 40 }} />
       ) : filtered.length === 0 ? (
@@ -128,6 +136,7 @@ const styles = StyleSheet.create({
   cardWrapper: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: spacing.md },
   editBtn: { padding: 8, backgroundColor: colors.primaryXLight, borderRadius: 8, borderWidth: 1, borderColor: colors.primaryLight },
   list: { paddingBottom: 24 },
+  fab: { position: 'absolute', bottom: 24, right: 24, width: 54, height: 54, borderRadius: 27, backgroundColor: colors.primaryMid, justifyContent: 'center', alignItems: 'center', elevation: 4, zIndex: 10 },
   empty: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 15, fontWeight: '600', color: colors.textSecondary, marginTop: 12 },
   emptyText: { fontSize: 13, color: colors.textMuted, marginTop: 4, textAlign: 'center' },

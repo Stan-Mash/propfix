@@ -5,7 +5,6 @@ import { useAuth } from '../../context/AuthContext';
 import { usePortfolio } from '../../context/PortfolioContext';
 import ScreenHeader from '../../components/ScreenHeader';
 import { useTickets } from '../../context/TicketsContext';
-import { PropertyFormSheet } from '../../components/PortfolioForms';
 import { colors, spacing, card } from '../../theme';
 
 const fmt = (n) => 'KES ' + Number(n || 0).toLocaleString();
@@ -15,7 +14,6 @@ export default function PortfolioScreen({ navigation }) {
   const { properties, units: allUnits, getVariance } = usePortfolio();
   const { tickets } = useTickets();
   const [search, setSearch] = useState('');
-  const [showAddProp, setShowAddProp] = useState(false);
 
   const isCaretaker = userProfile?.role === 'caretaker';
   const isManager = userProfile?.role === 'manager';
@@ -64,7 +62,7 @@ export default function PortfolioScreen({ navigation }) {
           )}
         </View>
         {canAdd && (
-          <TouchableOpacity style={s.addBtn} onPress={() => setShowAddProp(true)} activeOpacity={0.85}>
+          <TouchableOpacity style={s.addBtn} onPress={() => navigation.navigate('AddProperty')} activeOpacity={0.85}>
             <MaterialIcons name="add" size={20} color="#fff" />
             <Text style={s.addBtnTxt}>Add</Text>
           </TouchableOpacity>
@@ -138,11 +136,6 @@ export default function PortfolioScreen({ navigation }) {
         }}
       />
 
-      <PropertyFormSheet
-        visible={showAddProp}
-        onClose={() => setShowAddProp(false)}
-        onSaved={(propId) => { setShowAddProp(false); if (propId) navigation.navigate('UnitRoster', { propertyId: propId }); }}
-      />
     </View>
   );
 }

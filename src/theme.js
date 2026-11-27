@@ -1,39 +1,47 @@
+// PropFix V2 — Daylight Glass Design System
+// Header dark ink: #0B1320 | Background: #F6F7F9 | Cards: white / #E4E7EC hairline
+
 export const colors = {
-  // Brand
+  // Dark ink (header, hero cards, primary actions)
+  ink: '#0B1320',
+  inkElevated: '#142034',
+  inkBorder: '#1E2B42',
+
+  // Brand blue (active tabs, links, primary buttons)
   primary: '#1E3A5F',
-  primaryMid: '#2563EB',
+  primaryMid: '#1D4ED8',
   primaryLight: '#DBEAFE',
   primaryXLight: '#EFF6FF',
 
   // Surfaces
-  background: '#F1F5F9',
+  background: '#F6F7F9',
   inputBg: '#F8FAFC',
   surface: '#FFFFFF',
-  surfaceAlt: '#F1F5F9',
+  surfaceAlt: '#F2F5F9',
   surfaceHover: '#F8FAFC',
 
   // Borders
-  border: '#E2E8F0',
-  borderStrong: '#CBD5E1',
+  border: '#E4E7EC',
+  borderStrong: '#C9CDD6',
 
   // Text
-  text: '#0F172A',
-  textSecondary: '#475569',
+  text: '#0B1320',
+  textSecondary: '#3D4A5C',
   textMuted: '#64748B',
 
-  // Semantic
+  // Semantic — strict status meaning only
   success: '#065F46',
-  successMid: '#16A34A',
+  successMid: '#059669',
   successBg: '#D1FAE5',
   successBorder: '#6EE7B7',
 
-  warning: '#92400E',
+  warning: '#78350F',
   warningMid: '#B45309',
   warningBg: '#FEF3C7',
   warningBorder: '#F59E0B',
 
-  danger: '#991B1B',
-  dangerMid: '#DC2626',
+  danger: '#7F1D1D',
+  dangerMid: '#B91C1C',
   dangerBg: '#FEE2E2',
   dangerBorder: '#FCA5A5',
 
@@ -46,53 +54,50 @@ export const colors = {
   purpleBg: '#F3E8FF',
   purpleBorder: '#C4B5FD',
 
-  amber: '#D97706',
+  amber: '#B45309',
   amberBg: '#FFFBEB',
 };
 
 export const shadow = {
   sm: {
-    shadowColor: '#000',
+    shadowColor: '#0B1320',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
     shadowRadius: 2,
     elevation: 1,
   },
   md: {
-    shadowColor: '#000',
+    shadowColor: '#0B1320',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
 };
 
-// Standard card: white surface, uniform hairline border, soft shadow. No coloured borders;
-// status is shown with an 8px dot (see StatusDot) or one badge in the card header.
+// Standard card: white, 1px hairline, minimal shadow
 export const card = {
   backgroundColor: '#FFFFFF',
-  borderRadius: 16,
+  borderRadius: 12,
   borderWidth: 1,
-  borderColor: '#E2E8F0',
-  marginBottom: 14,
-  shadowColor: '#0F172A',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.05,
-  shadowRadius: 8,
+  borderColor: '#E4E7EC',
+  marginBottom: 12,
+  shadowColor: '#0B1320',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.04,
+  shadowRadius: 4,
   elevation: 2,
 };
 
-// Status dot colours
 export const accent = {
-  Emergency: '#DC2626',
-  Urgent: '#D97706',
-  Routine: '#2563EB',
+  Emergency: '#B91C1C',
+  Urgent: '#B45309',
+  Routine: '#1D4ED8',
   done: '#059669',
-  info: '#2563EB',
+  info: '#1D4ED8',
   neutral: '#94A3B8',
 };
 
-// Enterprise: tight radius, dense layouts
 export const radius = {
   xs: 4,
   sm: 6,

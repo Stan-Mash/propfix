@@ -6,6 +6,7 @@ import {
   onAuthStateChanged,
   GoogleAuthProvider,
   signInWithCredential,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -102,6 +103,8 @@ export const AuthProvider = ({ children }) => {
     return { user: result.user, profile };
   };
 
+  const resetPassword = (email) => sendPasswordResetEmail(auth, email);
+
   const logout = async () => {
     try {
       if (GoogleSignin) await GoogleSignin.signOut().catch(() => {});
@@ -110,7 +113,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, userProfile, setUserProfile, loading, login, register, googleSignIn, logout }}>
+    <AuthContext.Provider value={{ user, userProfile, setUserProfile, loading, login, register, googleSignIn, logout, resetPassword }}>
       {children}
     </AuthContext.Provider>
   );

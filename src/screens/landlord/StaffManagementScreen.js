@@ -7,6 +7,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { usePortfolio } from '../../context/PortfolioContext';
+import { useAuth } from '../../context/AuthContext';
+import ScreenHeader from '../../components/ScreenHeader';
 import { colors, radius, spacing } from '../../theme';
 
 const ROLE_LABELS = { manager: 'Manager', caretaker: 'Caretaker', landlord: 'Landlord' };
@@ -18,6 +20,7 @@ const ROLE_COLORS = {
 
 export default function StaffManagementScreen({ navigation }) {
   const { properties } = usePortfolio();
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [assignModal, setAssignModal] = useState(null); // { uid, name }
@@ -50,7 +53,7 @@ export default function StaffManagementScreen({ navigation }) {
         ]
       );
     } else {
-      if (!properties.length) {
+      if (properties.length) {
         setAssignModal({ uid, name: users.find(u => u.uid === uid)?.name || '' });
       } else {
         doUpdate(uid, { active: true });
@@ -92,26 +95,39 @@ export default function StaffManagementScreen({ navigation }) {
     const rc = ROLE_COLORS[u.role] || ROLE_COLORS.caretaker;
     const propName = u.propertyId ? (properties.find(p => p.id === u.propertyId)?.name || u.propertyId) : null;
     const isActive = u.active !== false;
-    return (
-      <View key={u.id} style={styles.userCard}>
+    const isMe = u.uid === currentUser?.uid;
+    const isOwner = u.role === 'landlord';
+    const content = (
+      <>
         <View style={styles.userAvatar}>
           <Text style={styles.avatarText}>{(u.name || '?')[0].toUpperCase()}</Text>
         </View>
         <View style={styles.userInfo}>
           <View style={styles.userNameRow}>
             <Text style={styles.userName}>{u.name}</Text>
-            <View style={[styles.roleBadge, { backgroundColor: rc.bg }]}>
-              <Text style={[styles.roleText, { color: rc.text }]}>{ROLE_LABELS[u.role] || u.role}</Text>
-            </View>
+            {isOwner ? (
+              <View style={[styles.roleBadge, { backgroundColor: ROLE_COLORS.landlord.bg }]}>
+                <Text style={[styles.roleText, { color: ROLE_COLORS.landlord.text }]}>Owner · Full access</Text>
+              </View>
+            ) : (
+              <View style={[styles.roleBadge, { backgroundColor: rc.bg }]}>
+                <Text style={[styles.roleText, { color: rc.text }]}>{ROLE_LABELS[u.role] || u.role}</Text>
+              </View>
+            )}
+            {isMe && (
+              <View style={styles.youBadge}>
+                <Text style={styles.youBadgeText}>You</Text>
+              </View>
+            )}
           </View>
           <Text style={styles.userEmail}>{u.email}</Text>
-          {propName ? (
+          {isOwner ? null : propName ? (
             <Text style={styles.propLabel}>{propName}</Text>
           ) : (
             <Text style={[styles.propLabel, { color: colors.warningMid }]}>No property assigned</Text>
           )}
         </View>
-        {showActions && (
+        {showActions && !isMe && (
           <TouchableOpacity
             style={[styles.actionBtn, isActive ? styles.actionDeactivate : styles.actionActivate]}
             onPress={() => toggleActive(u.uid, isActive)}
@@ -124,22 +140,36 @@ export default function StaffManagementScreen({ navigation }) {
             />
           </TouchableOpacity>
         )}
-      </View>
+      </>
+    );
+    return showActions && !isOwner && !isMe ? (
+      <TouchableOpacity key={u.id} style={styles.userCard} activeOpacity={0.75}
+        onPress={() => setAssignModal({ uid: u.uid, name: u.name || '' })}>
+        {content}
+      </TouchableOpacity>
+    ) : (
+      <View key={u.id} style={styles.userCard}>{content}</View>
     );
   };
 
   return (
     <View style={styles.wrap}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <MaterialIcons name="arrow-back" size={22} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Staff Accounts</Text>
-        <TouchableOpacity onPress={fetchUsers} style={styles.refreshBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <MaterialIcons name="refresh" size={22} color={colors.primaryMid} />
-        </TouchableOpacity>
-      </View>
+      <ScreenHeader
+        title="Staff Accounts"
+        subtitle={`${active.length} active · ${pending.length} pending`}
+        showBack
+        rightAction={
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity onPress={fetchUsers} style={styles.hdrIconBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <MaterialIcons name="refresh" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.inviteBtn} onPress={() => navigation.navigate('Register')}>
+              <MaterialIcons name="person-add" size={14} color="#fff" />
+              <Text style={styles.inviteBtnTxt}>Invite</Text>
+            </TouchableOpacity>
+          </View>
+        }
+      />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} size="large" color={colors.primaryMid} />
@@ -243,10 +273,9 @@ export default function StaffManagementScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: colors.background },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingTop: 56, paddingBottom: 14, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
-  backBtn: { marginRight: 12 },
-  headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: colors.text },
-  refreshBtn: {},
+  hdrIconBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center' },
+  inviteBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primaryMid, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8 },
+  inviteBtnTxt: { fontSize: 12, fontWeight: '700', color: '#fff' },
   scroll: { flex: 1, padding: spacing.md },
   section: { marginBottom: 24 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 8 },
@@ -262,6 +291,8 @@ const styles = StyleSheet.create({
   userName: { fontSize: 14, fontWeight: '600', color: colors.text },
   roleBadge: { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
   roleText: { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
+  youBadge: { backgroundColor: colors.successBg, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 },
+  youBadgeText: { fontSize: 10, fontWeight: '700', color: colors.successMid },
   userEmail: { fontSize: 12, color: colors.textMuted, marginBottom: 2 },
   propLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '500' },
   actionBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },

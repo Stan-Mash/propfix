@@ -5,9 +5,13 @@ const STORAGE_KEY = 'propfix_app_settings';
 
 const DEFAULTS = {
   companyName: 'Your Company Name',
+  companyPhone: '',
+  mpesaPaybill: '',
+  paymentNote: '',
   monthlyBudget: 120000,
   unitLabel: 'units',
   unitCostDefault: 65,
+  designVersion: 'v2',
 };
 
 const AppSettingsContext = createContext({
