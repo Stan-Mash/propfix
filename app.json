@@ -1,8 +1,17 @@
 {
   "expo": {
-    "name": "maintenance-tracker",
-    "slug": "maintenance-tracker",
+    "name": "PropFix",
+    "slug": "propfix",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/462f1e45-3b04-4b0d-8851-64681c6892cd",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 3000
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -15,10 +24,42 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "package": "com.anonymous.maintenancetracker",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
+      ]
     },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "CHABRIN needs camera access to capture meter readings, Before/After photos, and material delivery evidence."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow CHABRIN to save meter photos to your gallery.",
+          "savePhotosPermission": "Allow CHABRIN to save photos."
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "462f1e45-3b04-4b0d-8851-64681c6892cd"
+      }
+    },
+    "owner": "maintenancetrackers-team"
   }
 }
